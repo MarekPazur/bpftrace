@@ -1855,6 +1855,7 @@ public:
   std::string ns;
   std::string func;
   std::string pin;
+  std::string src_file;  // for userspace probes, DWARF compilation unit source
   usdt_probe_entry usdt; // resolved USDT entry, used to support arguments with
                          // wildcard matches
   int64_t freq = 0;
@@ -1865,6 +1866,7 @@ public:
   uint64_t address = 0;
   uint64_t func_offset = 0;
   uint64_t bpf_prog_id = 0;
+  uint64_t line_num = 0;
   bool ignore_invalid = false;
 
   std::string name() const;

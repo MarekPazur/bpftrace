@@ -415,6 +415,54 @@ ssize_t Dwarf::get_bitfield_size(Dwarf_Die &field_die)
   return 0;
 }
 
+uint64_t Dwarf::line_to_addr(const std::string &source_file,
+                             uint64_t line_num) const
+{
+  Dwarf_Die *cudie = nullptr;
+  Dwarf_Addr cubias;
+
+  while ((cudie = dwfl_nextcu(dwfl, cudie, &cubias)) != nullptr) {
+    Dwarf_Lines *lines = nullptr;
+    size_t num_lines = 0;
+
+    if (dwarf_getsrclines(cudie, &lines, &num_lines) != 0)
+      continue;
+
+    bool cu_match = false;
+
+    for (size_t i = 0; i < num_lines; i++) {
+      Dwarf_Line *line = dwarf_onesrcline(lines, i);
+      if (line == nullptr)
+        continue;
+
+      const char *linesrc = dwarf_linesrc(line, nullptr, nullptr);
+      if (linesrc == nullptr)
+        continue;
+
+      int lineno;
+      if (dwarf_lineno(line, &lineno) != 0)
+        continue;
+
+      // Absolute path
+      if (source_file == linesrc) {
+        cu_match = true;
+
+        if (line_num == static_cast<uint64_t>(lineno)) {
+          Dwarf_Addr addr;
+          if (dwarf_lineaddr(line, &addr) == 0) {
+            return addr;
+          }
+        }
+      }
+    }
+    // CU matched, exit early
+    if (cu_match)
+      break;
+  }
+
+  return 0;
+}
+
 } // namespace bpftrace
 
 #endif // HAVE_LIBDW

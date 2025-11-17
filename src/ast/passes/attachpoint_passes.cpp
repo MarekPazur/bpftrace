@@ -53,14 +53,19 @@ void AttachPointChecker::visit(AttachPoint &ap)
   } else if (ap.provider == "uprobe" || ap.provider == "uretprobe") {
     if (ap.target.empty())
       ap.addError() << ap.provider << " should have a target";
-    if (ap.func.empty() && ap.address == 0)
-      ap.addError() << ap.provider
-                    << " should be attached to a function and/or address";
+    if (ap.func.empty() && ap.address == 0 &&
+        (ap.src_file.empty() || ap.line_num == 0))
+      ap.addError()
+          << ap.provider
+          << " should be attached to a function, address, or source file line";
     if (!ap.lang.empty() && !is_supported_lang(ap.lang))
       ap.addError() << "unsupported language type: " << ap.lang;
 
     if (ap.provider == "uretprobe" && ap.func_offset != 0)
       ap.addError() << "uretprobes can not be attached to a function offset";
+    if (ap.provider == "uretprobe" &&
+        (!ap.src_file.empty() || ap.line_num != 0))
+      ap.addError() << "uretprobes can not be attached to source file line";
 
     auto get_paths = [&]() -> Result<std::vector<std::string>> {
       const auto pid = bpftrace_.pid();
@@ -518,10 +523,22 @@ AttachPointParser::State AttachPointParser::lex_attachpoint(
   std::string raw = ap.raw_input;
   std::vector<std::string> ret;
   bool in_quotes = false;
+  bool has_at_delim = false;
   std::string argument;
 
   for (size_t idx = 0; idx < raw.size(); ++idx) {
-    if (raw[idx] == ':' && !in_quotes) {
+    if (!in_quotes && (raw[idx] == ':' || raw[idx] == '@')) {
+      // The '@' delimiter is permitted only once
+      if (raw[idx] == '@') {
+        if (has_at_delim) {
+          errs_ << "duplicate '@' (target-source:line delimiter): "
+                << raw.substr(0, idx) << "'" << raw[idx] << "'"
+                << raw.substr(idx + 1) << std::endl;
+          return State::INVALID;
+        }
+        has_at_delim = true;
+      }
+
       parts_.emplace_back(std::move(argument));
       // The standard says an std::string in moved-from state is in
       // valid but unspecified state, so clear() to be safe
@@ -688,8 +705,12 @@ AttachPointParser::State AttachPointParser::kretprobe_parser()
 }
 
 AttachPointParser::State AttachPointParser::uprobe_parser(bool allow_offset,
-                                                          bool allow_abs_addr)
+                                                          bool allow_abs_addr,
+                                                          bool allow_line_map)
 {
+  // Source file line to address mapping
+  bool line_mapped = (ap_->raw_input.find('@') != std::string::npos);
+
   const auto pid = bpftrace_.pid();
   if (pid.has_value() &&
       (parts_.size() == 2 ||
@@ -709,7 +730,7 @@ AttachPointParser::State AttachPointParser::uprobe_parser(bool allow_offset,
     return argument_count_error(2, 3);
   }
 
-  if (parts_.size() == 4)
+  if (parts_.size() == 4 && !line_mapped)
     ap_->lang = parts_[2];
 
   ap_->target = "";
@@ -729,6 +750,46 @@ AttachPointParser::State AttachPointParser::uprobe_parser(bool allow_offset,
 
   if (ap_->target.empty()) {
     ap_->target = parts_[1];
+  }
+
+  // Handle uprobe:/lib/foo@bar.c:100 case
+  if (line_mapped) {
+    if (!allow_line_map) {
+      errs_ << "Line to address mapping not allowed" << std::endl;
+      return INVALID;
+    }
+
+    if (parts_.size() != 4) {
+      errs_ << "Invalid uprobe source:line arguments - "
+            << "expected format: uprobe:TARGET@FILE:LINE" << std::endl;
+      return INVALID;
+    }
+
+    if (util::has_wildcard(ap_->target)) {
+      errs_ << "Cannot use wildcards with line to address mapped attach points"
+            << std::endl;
+      return INVALID;
+    }
+
+    // (Source file, line number) pair instead of function/address
+    std::filesystem::path src_file(parts_[2]);
+    if (src_file.is_absolute()) {
+      ap_->src_file = src_file.string();
+    } else {
+      // Auto complete the path, if the source file
+      // does not have an absolute path specified
+      std::filesystem::path target(ap_->target);
+      ap_->src_file = (target.parent_path() / src_file).string();
+    }
+
+    auto res = util::to_uint(parts_[3]);
+    if (!res) {
+      errs_ << "Invalid line number: " << res.takeError() << std::endl;
+      return INVALID;
+    }
+    ap_->line_num = *res;
+
+    return OK;
   }
 
   const std::string &func = parts_.back();
@@ -782,7 +843,7 @@ AttachPointParser::State AttachPointParser::uprobe_parser(bool allow_offset,
 
 AttachPointParser::State AttachPointParser::uretprobe_parser()
 {
-  return uprobe_parser(false);
+  return uprobe_parser(false, true, false);
 }
 
 AttachPointParser::State AttachPointParser::usdt_parser()

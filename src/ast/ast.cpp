@@ -179,6 +179,7 @@ AttachPoint *AttachPoint::create_expansion_copy(ASTContext &ctx,
   ap->ns = ns;
   ap->func = func;
   ap->pin = pin;
+  ap->src_file = src_file;
   ap->usdt = usdt;
   ap->freq = freq;
   ap->len = len;
@@ -186,6 +187,7 @@ AttachPoint *AttachPoint::create_expansion_copy(ASTContext &ctx,
   ap->async = async;
   ap->address = address;
   ap->func_offset = func_offset;
+  ap->line_num = line_num;
 
   switch (probetype(ap->provider)) {
     case ProbeType::kprobe:

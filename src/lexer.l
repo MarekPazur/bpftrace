@@ -44,7 +44,7 @@ map      @{ident}|@
 var      ${ident}
 hspace   [ \t]
 vspace   \n
-path     :(\\.|[_\-\./a-zA-Z0-9#$+\*])+
+path     :(\\.|[_\-\./a-zA-Z0-9#$+\*@])+
 /* Most of the builtins are prefixed with __builtin_ as they are exposed to users via macros e.g. macro cpu() { __builtin_cpu } */
 builtin  arg[0-9]+|args|ctx|kstack|nsecs|pid|sarg[0-9]|tid|ustack|__builtin_cgroup|__builtin_comm|__builtin_cpid|__builtin_cpu|__builtin_curtask|__builtin_elapsed|__builtin_func|__builtin_gid|__builtin_jiffies|__builtin_ncpus|__builtin_probe|__builtin_rand|__builtin_retval|__builtin_uid|__builtin_usermode|__builtin_username
 

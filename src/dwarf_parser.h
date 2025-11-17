@@ -30,6 +30,9 @@ public:
   SizedType get_stype(const std::string &type_name) const;
   void resolve_fields(const SizedType &type) const;
 
+  uint64_t line_to_addr(
+      const std::string &source_file, uint64_t line_num) const;
+
 private:
   Dwarf(BPFtrace *bpftrace, const std::string &file_path);
 

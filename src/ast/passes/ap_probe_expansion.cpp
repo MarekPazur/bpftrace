@@ -325,6 +325,23 @@ void ProbeAndApExpander::visit(AttachPointList &aps)
         break;
       }
       case ExpansionType::NONE: {
+        // DWARF source file line to address expansion
+        if (!ap->src_file.empty() && ap->line_num != 0) {
+          assert(probe_type == ProbeType::uprobe ||
+                 probe_type == ProbeType::uretprobe);
+
+          Dwarf *dwarf = bpftrace_.get_dwarf(ap->target);
+          if (dwarf) {
+            uint64_t addr = dwarf->line_to_addr(ap->src_file, ap->line_num);
+            if (addr == 0) {
+              auto &err = ap->addError();
+              err << "Unable to map line " << ap->src_file << ":"
+                  << ap->line_num << " to address";
+              return;
+            }
+            ap->address = addr;
+          }
+        }
         new_aps.push_back(ap);
         break;
       }
